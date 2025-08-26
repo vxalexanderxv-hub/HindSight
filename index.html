@@ -1,103 +1,132 @@
-<!DOCTYPE html><html lang="en">
+<!DOCTYPE html>
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Deer Movement Predictor</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
   <style>
-    body { margin: 0; font-family: sans-serif; background: #111; color: #eee; }
-    #map { height: 100vh; width: 100%; }
-    .overlay {
-      position: absolute; bottom: 10px; left: 10px;
-      background: rgba(0,0,0,0.6); color: #fff;
-      padding: 10px; border-radius: 8px;
-      font-size: 14px;
+    body { margin: 0; padding: 0; background: #111; color: #eee; font-family: sans-serif; }
+    #map { height: 100vh; }
+    #controls {
+      position: absolute; top: 10px; left: 10px; z-index: 1000;
+      background: rgba(0,0,0,0.6); padding: 8px; border-radius: 8px;
     }
-    .tabs { display: flex; background: #222; padding: 8px; }
-    .tab { margin-right: 8px; padding: 6px 12px; border-radius: 6px; cursor: pointer; }
-    .tab.active { background: #444; }
+    button { margin: 2px; }
   </style>
 </head>
 <body>
-  <div class="tabs">
-    <div class="tab active" onclick="showTab('map')">Map</div>
-    <div class="tab" onclick="showTab('forecast')">Forecast</div>
-    <div class="tab" onclick="toggleMode()" id="modeBtn">🌙 Dark</div>
-    <div class="tab" onclick="useMyLocation()">📍 Use My Location</div>
-  </div>  <div id="mapTab">
-    <div id="map"></div>
-    <div class="overlay" id="infoOverlay">Loading weather & movement...</div>
-  </div>  <div id="forecastTab" style="display:none; padding:20px;">
-    <h2>Forecast</h2>
-    <div id="forecast"></div>
-  </div>  <script>
+  <div id="controls">
+    <button id="darkToggle">🌙 Dark</button>
+    <button id="reload">📍 Reload My Location</button>
+  </div>
+  <div id="map"></div>
+
+  <script>
+    let map;
     let darkMode = true;
-    function toggleMode(){
-      darkMode = !darkMode;
-      document.body.style.background = darkMode ? "#111" : "#fff";
-      document.body.style.color = darkMode ? "#eee" : "#111";
-      document.getElementById("modeBtn").textContent = darkMode ? "🌙 Dark" : "☀️ Light";
-    }
-    function showTab(tab){
-      document.getElementById("mapTab").style.display = tab==='map'?"block":"none";
-      document.getElementById("forecastTab").style.display = tab==='forecast'?"block":"none";
-      document.querySelectorAll('.tab').forEach(el=>el.classList.remove('active'));
-      event.target.classList.add('active');
-    }
 
-    // Leaflet map init
-    const map = L.map('map').setView([39, -95], 5);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 19,
-    }).addTo(map);
+    function initMap(lat, lon) {
+      if (map) { map.remove(); }
+      map = L.map('map').setView([lat, lon], 14);
 
-    // Overpass API fallback fetcher
-    const overpassUrls = [
-      "https://overpass.kumi.systems/api/interpreter",
-      "https://overpass.openstreetmap.fr/api/interpreter",
-      "https://overpass-api.de/api/interpreter"
-    ];
-
-    async function fetchOverpass(query){
-      for (let url of overpassUrls){
-        try {
-          let res = await fetch(`${url}?data=${encodeURIComponent(query)}`);
-          if(res.ok){
-            return res.json();
-          }
-        } catch(e){
-          console.warn("Overpass mirror failed:", url);
-        }
-      }
-      throw new Error("All Overpass mirrors failed");
-    }
-
-    async function loadTrails(){
-      let bounds = map.getBounds();
-      // smaller query box to avoid rate limit
-      let query = `[out:json][timeout:25];(
-        way["highway"="path"](${bounds.getSouth()},${bounds.getWest()},${bounds.getNorth()},${bounds.getEast()});
-        way["landuse"="forest"](${bounds.getSouth()},${bounds.getWest()},${bounds.getNorth()},${bounds.getEast()});
-      );out body;`;
-
-      try {
-        let data = await fetchOverpass(query);
-        console.log("Overpass data", data);
-        // Just mark trail count for now
-        L.marker(map.getCenter()).addTo(map).bindPopup(`Fetched ${data.elements.length} features`).openPopup();
-      } catch(err){
-        alert("Could not load landcover/trails from OSM. Try zooming in more.");
-      }
-    }
-
-    map.on('moveend', loadTrails);
-    loadTrails();
-
-    function useMyLocation(){
-      navigator.geolocation.getCurrentPosition(pos=>{
-        map.setView([pos.coords.latitude, pos.coords.longitude], 13);
+      const dark = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+        attribution: '&copy; OpenStreetMap contributors'
       });
+
+      const light = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap contributors'
+      });
+
+      dark.addTo(map);
+
+      // Toggle dark/light mode
+      document.getElementById("darkToggle").onclick = () => {
+        darkMode = !darkMode;
+        if (darkMode) {
+          map.addLayer(dark); map.removeLayer(light);
+        } else {
+          map.addLayer(light); map.removeLayer(dark);
+        }
+      };
+
+      // Fetch OSM landcover/trails via Overpass
+      fetchOSMData(lat, lon);
     }
-  </script></body>
+
+    function fetchOSMData(lat, lon) {
+      const delta = 0.02; // ~2km bounding box
+      const bbox = `${lat - delta},${lon - delta},${lat + delta},${lon + delta}`;
+
+      const query = `
+        [out:json][timeout:25];
+        (
+          way["landuse"](${bbox});
+          way["natural"="wood"](${bbox});
+          way["highway"="path"](${bbox});
+        );
+        out body;
+        >;
+        out skel qt;
+      `;
+
+      const url = "https://overpass-api.de/api/interpreter?data=" + encodeURIComponent(query);
+
+      fetch(url)
+        .then(r => r.json())
+        .then(data => {
+          L.geoJSON(osm2geojson(data), {
+            style: f => ({
+              color: f.properties.highway ? "red" : "green",
+              weight: 1,
+              opacity: 0.6
+            })
+          }).addTo(map);
+        })
+        .catch(err => {
+          alert("OSM fetch failed: " + err);
+        });
+    }
+
+    // Simple OSM JSON → GeoJSON converter (lightweight)
+    function osm2geojson(osmData) {
+      const geojson = { type: "FeatureCollection", features: [] };
+      const nodes = {};
+      osmData.elements.forEach(el => {
+        if (el.type === "node") nodes[el.id] = [el.lon, el.lat];
+      });
+      osmData.elements.forEach(el => {
+        if (el.type === "way" && el.nodes) {
+          const coords = el.nodes.map(n => nodes[n]).filter(Boolean);
+          geojson.features.push({
+            type: "Feature",
+            geometry: {
+              type: "LineString",
+              coordinates: coords
+            },
+            properties: el.tags || {}
+          });
+        }
+      });
+      return geojson;
+    }
+
+    function getLocationAndInit() {
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          pos => initMap(pos.coords.latitude, pos.coords.longitude),
+          () => initMap(40.0, -95.0) // fallback: central US
+        );
+      } else {
+        initMap(40.0, -95.0);
+      }
+    }
+
+    document.getElementById("reload").onclick = getLocationAndInit;
+
+    // Run on load
+    getLocationAndInit();
+  </script>
+</body>
 </html>
