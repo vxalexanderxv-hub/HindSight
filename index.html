@@ -1,494 +1,103 @@
 <!DOCTYPE html><html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Deer Movement Predictor (Free & Client‑Side)</title>
-  <!-- Leaflet -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <!-- Leaflet Heatmap -->
-  <script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
-  <!-- Turf.js for geospatial ops -->
-  <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
-  <!-- Day.js for dates -->
-  <script src="https://unpkg.com/dayjs@1.11.10/dayjs.min.js"></script>
-  <script src="https://unpkg.com/dayjs@1.11.10/plugin/utc.js"></script>
-  <script src="https://unpkg.com/dayjs@1.11.10/plugin/timezone.js"></script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Deer Movement Predictor</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
   <style>
-    :root {
-      --bg: #0b0f14;
-      --panel: #111722;
-      --text: #e6edf3;
-      --muted: #9eb3c7;
-      --accent: #7dd3fc;
-      --good: #34d399;
-      --bad: #f87171;
-      --border: #223047;
+    body { margin: 0; font-family: sans-serif; background: #111; color: #eee; }
+    #map { height: 100vh; width: 100%; }
+    .overlay {
+      position: absolute; bottom: 10px; left: 10px;
+      background: rgba(0,0,0,0.6); color: #fff;
+      padding: 10px; border-radius: 8px;
+      font-size: 14px;
     }
-    [data-theme="light"] {
-      --bg: #f8fafc;
-      --panel: #ffffff;
-      --text: #0f172a;
-      --muted: #475569;
-      --accent: #0369a1;
-      --good: #059669;
-      --bad: #dc2626;
-      --border: #e2e8f0;
-    }
-    html, body { height: 100%; margin: 0; background: var(--bg); color: var(--text); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; }
-    .app { display: grid; grid-template-rows: 56px 1fr; height: 100%; }
-    header { display: flex; align-items: center; justify-content: space-between; padding: 0 12px; border-bottom: 1px solid var(--border); background: var(--panel); }
-    header .tabs { display: flex; gap: 8px; }
-    .tabbtn { border: 1px solid var(--border); background: transparent; color: var(--text); padding: 8px 12px; border-radius: 10px; cursor: pointer; }
-    .tabbtn[aria-selected="true"] { background: var(--accent); color: white; border-color: var(--accent); }
-    .right { display: flex; gap: 8px; align-items: center; }
-    .pill { border: 1px solid var(--border); background: transparent; color: var(--text); padding: 6px 10px; border-radius: 999px; cursor: pointer; }#map { width: 100%; height: 100%; }
-#mapView, #forecastView { display: none; height: 100%; }
-.show { display: block; }
-
-/* Weather overlay */
-.overlay { position: absolute; left: 12px; bottom: 12px; background: color-mix(in lab, var(--panel) 92%, transparent); padding: 12px; border-radius: 14px; box-shadow: 0 6px 24px rgba(0,0,0,.25); border: 1px solid var(--border); backdrop-filter: blur(6px); }
-.overlay h3 { margin: 0 0 6px 0; font-size: 13px; font-weight: 600; opacity: .9; }
-.row { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; }
-.metric { display: flex; align-items: baseline; gap: 8px; }
-.metric .big { font-size: 22px; font-weight: 700; }
-.metric .delta { font-size: 18px; }
-.windArc { width: 180px; height: 68px; }
-.score { font-weight: 800; font-size: 22px; }
-.score.good { color: var(--good); }
-.score.bad { color: var(--bad); }
-
-/* Floating controls */
-.controls { position: absolute; right: 12px; top: 12px; display: flex; flex-direction: column; gap: 8px; }
-.control { background: var(--panel); border: 1px solid var(--border); color: var(--text); padding: 8px 12px; border-radius: 10px; cursor: pointer; }
-
-/* Forecast view */
-#forecastView { padding: 12px; overflow: auto; }
-.daily { display: grid; grid-template-columns: 120px repeat(6,1fr); gap: 10px; align-items: center; padding: 10px; border: 1px solid var(--border); border-radius: 12px; background: var(--panel); margin-bottom: 10px; }
-.chip { font-size: 12px; padding: 4px 8px; background: color-mix(in lab, var(--accent) 18%, transparent); border: 1px solid var(--border); border-radius: 999px; }
-.legend { position: absolute; right: 12px; bottom: 12px; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; font-size: 12px; }
-.legend .swatch { display: inline-block; width: 10px; height: 10px; margin-right: 6px; border-radius: 2px; }
-
+    .tabs { display: flex; background: #222; padding: 8px; }
+    .tab { margin-right: 8px; padding: 6px 12px; border-radius: 6px; cursor: pointer; }
+    .tab.active { background: #444; }
   </style>
 </head>
 <body>
-  <div class="app" id="app" data-theme="dark">
-    <header>
-      <div class="tabs">
-        <button class="tabbtn" id="tabMap" aria-selected="true">Map</button>
-        <button class="tabbtn" id="tabForecast" aria-selected="false">Forecast</button>
-      </div>
-      <div class="right">
-        <button class="pill" id="themeToggle" title="Toggle light/dark">🌙 Dark</button>
-        <a class="pill" id="locBtn" href="#">📍 Use My Location</a>
-      </div>
-    </header><!-- Map View -->
-<section id="mapView" class="show">
-  <div id="map"></div>
-  <div class="overlay" id="weatherOverlay">
-    <h3>Local Conditions</h3>
-    <div class="row">
-      <div class="metric"><span class="big" id="temp">--°</span><span id="tempTrend" class="delta">↔</span></div>
-      <div class="metric">Wind <span id="windSpeed">--</span> mph @ <span id="windDir">--</span>°</div>
-    </div>
-    <svg class="windArc" id="windArc" viewBox="0 0 180 68"></svg>
-    <div class="row" style="margin-top:6px">
-      <div class="metric">Pressure: <span id="press">--</span> mb (<span id="pressTrend">…</span>)</div>
-      <div class="metric">Moon: <span id="moon">--</span></div>
-    </div>
-    <div style="margin-top:8px">Movement Score: <span id="moveScore" class="score">--</span></div>
-  </div>
-  <div class="controls">
-    <button class="control" id="updateHeat">🔄 Update Heatmap</button>
-    <button class="control" id="toggleHeat">🔥 Toggle Heatmap</button>
-  </div>
-  <div class="legend" id="legend"><span class="swatch" style="background:#2b2b2b"></span>Low <span class="swatch" style="background:#7a3cbd"></span>Med <span class="swatch" style="background:#ff477e"></span>High</div>
-</section>
+  <div class="tabs">
+    <div class="tab active" onclick="showTab('map')">Map</div>
+    <div class="tab" onclick="showTab('forecast')">Forecast</div>
+    <div class="tab" onclick="toggleMode()" id="modeBtn">🌙 Dark</div>
+    <div class="tab" onclick="useMyLocation()">📍 Use My Location</div>
+  </div>  <div id="mapTab">
+    <div id="map"></div>
+    <div class="overlay" id="infoOverlay">Loading weather & movement...</div>
+  </div>  <div id="forecastTab" style="display:none; padding:20px;">
+    <h2>Forecast</h2>
+    <div id="forecast"></div>
+  </div>  <script>
+    let darkMode = true;
+    function toggleMode(){
+      darkMode = !darkMode;
+      document.body.style.background = darkMode ? "#111" : "#fff";
+      document.body.style.color = darkMode ? "#eee" : "#111";
+      document.getElementById("modeBtn").textContent = darkMode ? "🌙 Dark" : "☀️ Light";
+    }
+    function showTab(tab){
+      document.getElementById("mapTab").style.display = tab==='map'?"block":"none";
+      document.getElementById("forecastTab").style.display = tab==='forecast'?"block":"none";
+      document.querySelectorAll('.tab').forEach(el=>el.classList.remove('active'));
+      event.target.classList.add('active');
+    }
 
-<!-- Forecast View -->
-<section id="forecastView">
-  <div id="forecastList"></div>
-</section>
+    // Leaflet map init
+    const map = L.map('map').setView([39, -95], 5);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+    }).addTo(map);
 
-  </div><script>
-// --- Utilities ---
-const $ = (sel) => document.querySelector(sel);
-const setText = (id, val) => document.getElementById(id).textContent = val;
+    // Overpass API fallback fetcher
+    const overpassUrls = [
+      "https://overpass.kumi.systems/api/interpreter",
+      "https://overpass.openstreetmap.fr/api/interpreter",
+      "https://overpass-api.de/api/interpreter"
+    ];
 
-// Simple dark/light toggle
-const appRoot = document.getElementById('app');
-const themeToggle = document.getElementById('themeToggle');
-function applyTheme(theme){ appRoot.dataset.theme = theme; themeToggle.textContent = theme === 'dark' ? '🌙 Dark' : '☀️ Light'; }
-applyTheme('dark');
+    async function fetchOverpass(query){
+      for (let url of overpassUrls){
+        try {
+          let res = await fetch(`${url}?data=${encodeURIComponent(query)}`);
+          if(res.ok){
+            return res.json();
+          }
+        } catch(e){
+          console.warn("Overpass mirror failed:", url);
+        }
+      }
+      throw new Error("All Overpass mirrors failed");
+    }
 
-// Tabs
-const tabMap = document.getElementById('tabMap');
-const tabForecast = document.getElementById('tabForecast');
-const mapView = document.getElementById('mapView');
-const forecastView = document.getElementById('forecastView');
-function selectTab(which){
-  if(which==='map'){ tabMap.setAttribute('aria-selected','true'); tabForecast.setAttribute('aria-selected','false'); mapView.classList.add('show'); forecastView.classList.remove('show'); if(window._map) window._map.invalidateSize(); }
-  else { tabMap.setAttribute('aria-selected','false'); tabForecast.setAttribute('aria-selected','true'); forecastView.classList.add('show'); mapView.classList.remove('show'); }
-}
+    async function loadTrails(){
+      let bounds = map.getBounds();
+      // smaller query box to avoid rate limit
+      let query = `[out:json][timeout:25];(
+        way["highway"="path"](${bounds.getSouth()},${bounds.getWest()},${bounds.getNorth()},${bounds.getEast()});
+        way["landuse"="forest"](${bounds.getSouth()},${bounds.getWest()},${bounds.getNorth()},${bounds.getEast()});
+      );out body;`;
 
-tabMap.onclick = () => selectTab('map');
-tabForecast.onclick = () => selectTab('forecast');
-
-themeToggle.onclick = () => applyTheme(appRoot.dataset.theme === 'dark' ? 'light' : 'dark');
-
-// Init Leaflet
-const map = L.map('map', { zoomControl: true, preferCanvas: true }).setView([39.5, -98.35], 5);
-window._map = map;
-
-// OSM tiles (free)
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap' }).addTo(map);
-
-// Heatmap layer holder
-let heatLayer = L.heatLayer([], { radius: 25, blur: 20, maxZoom: 14, minOpacity: 0.25, gradient: { 0.0: '#2b2b2b', 0.5: '#7a3cbd', 1.0: '#ff477e' } });
-let heatVisible = true;
-
-// Feature caches
-let featureCache = { forests: [], fields: [], water: [], roads: [], trails: [] };
-
-// --- Geolocation ---
-const locBtn = document.getElementById('locBtn');
-locBtn.onclick = (e) => { e.preventDefault(); if(navigator.geolocation){ navigator.geolocation.getCurrentPosition(pos => {
-  const { latitude, longitude } = pos.coords; map.setView([latitude, longitude], 13); refreshAll([latitude, longitude]);
-}); } };
-
-// --- Weather + Movement Score ---
-async function fetchWeather(lat, lon){
-  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=temperature_2m,wind_speed_10m,wind_direction_10m,surface_pressure,precipitation_probability,cloudcover&current_weather=true&timezone=auto`;
-  const res = await fetch(url);
-  if(!res.ok) throw new Error('Weather fetch failed');
-  return res.json();
-}
-
-function computeTempTrend(hourly){
-  // Compare next 3h avg vs prev 3h avg
-  const nowIdx = hourly.time.findIndex(t => new Date(t) > new Date());
-  const prev = hourly.temperature_2m.slice(Math.max(0, nowIdx-4), nowIdx).filter(v=>v!=null);
-  const next = hourly.temperature_2m.slice(nowIdx, nowIdx+4).filter(v=>v!=null);
-  const avg = arr => arr.length? arr.reduce((a,b)=>a+b,0)/arr.length : 0;
-  const d = avg(next) - avg(prev);
-  return d; // positive rising
-}
-
-function moonIllumination(date){
-  // Simple moon illumination approx (0 new, 1 full)
-  // Source: simple approximation using known synodic month 29.530588853
-  const synodic = 29.530588853;
-  const knownNew = new Date('2000-01-06T18:14:00Z').getTime();
-  const phase = ((date.getTime() - knownNew) / (synodic*86400000)) % 1; // 0..1
-  const illum = 0.5 - 0.5*Math.cos(2*Math.PI*phase);
-  return { phase, illum };
-}
-
-function pressureTrend(hourly){
-  const nowIdx = hourly.time.findIndex(t => new Date(t) > new Date());
-  const prev = hourly.surface_pressure.slice(Math.max(0, nowIdx-6), nowIdx);
-  const next = hourly.surface_pressure.slice(nowIdx, nowIdx+6);
-  const avg = arr => arr.length? arr.reduce((a,b)=>a+b,0)/arr.length : 0;
-  const d = avg(next) - avg(prev);
-  return d; // positive rising
-}
-
-function movementScore(inputs){
-  // Heuristic, literature-inspired score scaled 0..100
-  // Inputs: { tempF, tempTrendF, windMph, windDir, pressMb, pressTrendMb, precipProb, cloud, hourLocal, moonIllum }
-  const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
-
-  // Temperature: cooler than prior hours during day is good; too hot (>75F) bad; cold snap bonus
-  let tempComp = 0;
-  if(inputs.hourLocal>=9 && inputs.hourLocal<=16){
-    tempComp += clamp((-inputs.tempTrendF)/5, -1, 1); // falling temps help mid-day
-  }
-  tempComp += clamp((65 - inputs.tempF)/20, -1, 1); // sweet spot ~45-65F
-
-  // Wind: light to moderate 3-12 mph best, >18 bad
-  let windComp = 0;
-  windComp += -Math.pow((inputs.windMph-7.5)/7.5,2)+1; // peak around 7.5 mph
-  windComp = clamp(windComp, -1, 1);
-
-  // Pressure trend: rising helps; falling hurts (front approaching)
-  let pressComp = clamp(inputs.pressTrendMb/1.5, -1, 1);
-
-  // Precip: light drizzle or just-after-rain increases movement; heavy rain/sustained bad
-  let precipComp = 0;
-  if(inputs.precipProb<20) precipComp += 0.2; else if(inputs.precipProb<60) precipComp += 0.5; else precipComp -= 0.5;
-
-  // Cloud cover: overcast can extend daylight movement
-  let cloudComp = clamp((inputs.cloud-50)/50, -0.5, 0.5);
-
-  // Moon: lower illumination generally favors earlier evening activity; high illumination may reduce it
-  let moonComp = clamp((0.5 - inputs.moonIllum)/0.5, -1, 1)*0.5;
-
-  // Time of day: crepuscular boost (dawn/dusk)
-  const hour = inputs.hourLocal;
-  let crep = (hour>=5 && hour<=8) || (hour>=17 && hour<=20) ? 1 : 0;
-
-  // Seasonality (rut proximity rough by calendar for North America): Oct 25–Nov 25 boost
-  const m = inputs.month; const d = inputs.day;
-  const rut = (m===10 && d>=25) || (m===11 && d<=25);
-
-  let raw = 50 + 20*tempComp + 20*windComp + 15*pressComp + 10*precipComp + 10*cloudComp + 10*moonComp + (crep?15:0) + (rut?10:0);
-  return clamp(Math.round(raw), 0, 100);
-}
-
-async function updateWeather(lat, lon){
-  const data = await fetchWeather(lat, lon);
-  const cw = data.current_weather;
-  const hourly = data.hourly;
-  const tempF = cw.temperature * 9/5 + 32;
-  const tempTrendC = computeTempTrend(hourly);
-  const tempTrendF = tempTrendC*9/5;
-  const windMph = cw.windspeed * 0.621371;
-  const windDir = cw.winddirection;
-  const pressMb = hourly.surface_pressure[0];
-  const pressT = pressureTrend(hourly);
-  const precipProb = hourly.precipitation_probability[0] ?? 0;
-  const cloud = hourly.cloudcover[0] ?? 0;
-  const now = new Date();
-  const { illum } = moonIllumination(now);
-
-  setText('temp', `${tempF.toFixed(0)}°F`);
-  setText('tempTrend', tempTrendF>0.5 ? '↗' : tempTrendF<-0.5 ? '↘' : '↔');
-  setText('windSpeed', windMph.toFixed(0));
-  setText('windDir', windDir.toFixed(0));
-  setText('press', pressMb.toFixed(0));
-  setText('pressTrend', pressT>0.5 ? 'Rising' : pressT<-0.5 ? 'Falling' : 'Steady');
-  setText('moon', `${Math.round(illum*100)}%`);
-
-  drawWindArc(hourly.wind_direction_10m.slice(0, 8));
-
-  const score = movementScore({
-    tempF, tempTrendF, windMph, windDir, pressMb, pressTrendMb: pressT, precipProb, cloud,
-    hourLocal: new Date().getHours(), moonIllum: illum,
-    month: new Date().getMonth()+1, day: new Date().getDate()
-  });
-  const scoreEl = document.getElementById('moveScore');
-  scoreEl.textContent = score;
-  scoreEl.classList.toggle('good', score>=66);
-  scoreEl.classList.toggle('bad', score<=33);
-
-  renderForecast(data);
-}
-
-function drawWindArc(dirs){
-  const svg = document.getElementById('windArc');
-  svg.innerHTML='';
-  // Draw baseline arc
-  const path = document.createElementNS('http://www.w3.org/2000/svg','path');
-  path.setAttribute('d','M10,58 Q90,5 170,58');
-  path.setAttribute('fill','none');
-  path.setAttribute('stroke','currentColor');
-  path.setAttribute('stroke-opacity','0.3');
-  path.setAttribute('stroke-width','2');
-  svg.appendChild(path);
-  // Place ticks projected along arc representing wind directions next 8 hours
-  dirs.forEach((deg,i)=>{
-    const t = i/(dirs.length-1);
-    const x = 10 + (170-10)*t;
-    const y = 58 - 53*Math.sin(Math.PI*t);
-    const g = document.createElementNS('http://www.w3.org/2000/svg','g');
-    const tick = document.createElementNS('http://www.w3.org/2000/svg','line');
-    tick.setAttribute('x1', x);
-    tick.setAttribute('y1', y);
-    tick.setAttribute('x2', x);
-    tick.setAttribute('y2', y-8);
-    tick.setAttribute('stroke','currentColor'); tick.setAttribute('stroke-width','2'); tick.setAttribute('opacity','0.6');
-    const arrow = document.createElementNS('http://www.w3.org/2000/svg','polygon');
-    const len = 10;
-    const rad = (deg-180)*Math.PI/180; // arrow pointing to where wind is going FROM
-    const ax = x + Math.cos(rad)*len;
-    const ay = y-12 + Math.sin(rad)*len;
-    arrow.setAttribute('points', `${ax},${ay} ${ax-4},${ay+8} ${ax+4},${ay+8}`);
-    arrow.setAttribute('fill','currentColor'); arrow.setAttribute('opacity','0.7');
-    g.appendChild(tick); g.appendChild(arrow); svg.appendChild(g);
-  });
-}
-
-function renderForecast(data){
-  const div = document.getElementById('forecastList');
-  div.innerHTML = '';
-  // Group hourly into daily summaries (next 7 days)
-  const days = {};
-  data.hourly.time.forEach((t, idx)=>{
-    const d = t.split('T')[0];
-    if(!days[d]) days[d] = { temps: [], winds: [], clouds: [], precip: [], press: [] };
-    days[d].temps.push(data.hourly.temperature_2m[idx]);
-    days[d].winds.push(data.hourly.wind_speed_10m[idx]);
-    days[d].clouds.push(data.hourly.cloudcover[idx]);
-    days[d].precip.push(data.hourly.precipitation_probability[idx]);
-    days[d].press.push(data.hourly.surface_pressure[idx]);
-  });
-  Object.entries(days).slice(0,7).forEach(([day, vals])=>{
-    const el = document.createElement('div'); el.className='daily';
-    const tmin = Math.min(...vals.temps); const tmax = Math.max(...vals.temps);
-    const wavg = vals.winds.reduce((a,b)=>a+b,0)/vals.winds.length;
-    const cavg = Math.round(vals.clouds.reduce((a,b)=>a+b,0)/vals.clouds.length);
-    const pmax = Math.max(...vals.precip.filter(v=>v!=null));
-    const pr = vals.press; const ptrend = pr[pr.length-1]-pr[0];
-    el.innerHTML = `
-      <div><strong>${day}</strong><div class="chip">${(tmin*9/5+32).toFixed(0)}–${(tmax*9/5+32).toFixed(0)}°F</div></div>
-      <div>Avg wind: ${(wavg*0.621371).toFixed(0)} mph</div>
-      <div>Clouds: ${cavg}%</div>
-      <div>Precip: ${pmax||0}%</div>
-      <div>Pressure: ${Math.round(pr[0])}→${Math.round(pr[pr.length-1])} mb (${ptrend>0? '↗':'↘'})</div>
-      <div>Est. Movement: <strong>${estimateDailyMovement({tmin,tmax,wavg,cavg,pmax,ptrend})}</strong></div>
-    `;
-    div.appendChild(el);
-  });
-}
-
-function estimateDailyMovement({tmin,tmax,wavg,cavg,pmax,ptrend}){
-  const tempF = ( (tmin+tmax)/2 )*9/5+32;
-  const windMph = wavg*0.621371;
-  const score = movementScore({
-    tempF, tempTrendF: 0, windMph, windDir: 0, pressMb: 0, pressTrendMb: ptrend,
-    precipProb: pmax||0, cloud: cavg, hourLocal: 18, moonIllum: moonIllumination(new Date()).illum,
-    month: new Date().getMonth()+1, day: new Date().getDate()
-  });
-  return score;
-}
-
-// --- Overpass helpers (OSM) ---
-async function fetchOverpass(bbox){
-  const [s,w,n,e] = bbox; // south, west, north, east
-  const q = `
-    [out:json][timeout:25];
-    (
-      way[landuse=forest](${s},${w},${n},${e});
-      way[natural=wood](${s},${w},${n},${e});
-      way[landuse~"farm|farmland|meadow|orchard|vineyard"](${s},${w},${n},${e});
-      way[natural=water](${s},${w},${n},${e});
-      way[water=reservoir](${s},${w},${n},${e});
-      way[waterway~"stream|river"](${s},${w},${n},${e});
-      way[highway~"primary|secondary|tertiary|trunk|residential|service"](${s},${w},${n},${e});
-      way[highway~"path|footway|cycleway|track"](${s},${w},${n},${e});
-    );
-    out body; >; out skel qt;`;
-  const url = 'https://overpass-api.nextzen.org/api/interpreter'; // public mirror; fallback to main if needed
-  let res = await fetch(url, { method:'POST', body: q, headers: { 'Content-Type': 'text/plain' }});
-  if(!res.ok){ res = await fetch('https://overpass-api.de/api/interpreter', { method:'POST', body:q, headers:{'Content-Type':'text/plain'}}); }
-  if(!res.ok) throw new Error('Overpass failed');
-  const json = await res.json();
-  return osmToGeoJSON(json);
-}
-
-function osmToGeoJSON(osm){
-  // Minimal assembler
-  const nodes = new Map();
-  osm.elements.filter(e=>e.type==='node').forEach(n=>nodes.set(n.id,[n.lat,n.lon]));
-  const features = [];
-  osm.elements.filter(e=>e.type==='way').forEach(w=>{
-    const coords = w.nodes.map(id=>nodes.get(id)).filter(Boolean).map(([lat,lon])=>[lon,lat]);
-    if(coords.length<3) return;
-    const tags = w.tags||{};
-    const geom = (tags.area==='yes' || tags.landuse || tags.natural || tags.water || tags.waterway) ? { type:'Polygon', coordinates:[coords] } : { type:'LineString', coordinates:coords };
-    features.push({ type:'Feature', properties: tags, geometry: geom });
-  });
-  return { type:'FeatureCollection', features };
-}
-
-function categorize(features){
-  featureCache = { forests: [], fields: [], water: [], roads: [], trails: [] };
-  features.features.forEach(f=>{
-    const p = f.properties||{};
-    const g = f.geometry||{};
-    const poly = (g.type==='Polygon' || g.type==='MultiPolygon');
-    if(p.landuse==='forest' || p.natural==='wood') featureCache.forests.push(f);
-    else if(p.landuse && /farm|farmland|meadow|orchard|vineyard/.test(p.landuse)) featureCache.fields.push(f);
-    else if(p.natural==='water' || p.water || p.waterway) featureCache.water.push(f);
-    else if(p.highway && /primary|secondary|tertiary|trunk|residential|service/.test(p.highway)) featureCache.roads.push(f);
-    else if(p.highway && /path|footway|cycleway|track/.test(p.highway)) featureCache.trails.push(f);
-  });
-}
-
-function toMultiPolygon(fc){
-  const polys = fc.filter(f=>f.geometry.type!=='LineString').map(f=>f.geometry);
-  return { type:'Feature', properties:{}, geometry: { type:'MultiPolygon', coordinates: polys.map(p=>p.coordinates) } };
-}
-
-function edgeScore(pt){
-  // Prefer near forest/field edges, then water proximity, penalize near roads
-  const p = turf.point(pt);
-  const nearForest = minDistance(p, featureCache.forests);
-  const nearField = minDistance(p, featureCache.fields);
-  const nearWater = minDistance(p, featureCache.water);
-  const nearRoad = minDistance(p, featureCache.roads);
-  const nearTrail = minDistance(p, featureCache.trails);
-
-  // Exclude within 30.48m (100ft) of trails
-  if(nearTrail < 0.03048) return 0; // km
-
-  // Edge desirability: closeness to both forest & fields
-  const edge = Math.max(0, 0.3/(nearForest+0.001) + 0.3/(nearField+0.001));
-  // Water bonus up to 300m
-  const water = Math.max(0, 0.4*(0.3 - Math.min(nearWater,0.3))/0.3);
-  // Road penalty within 200m
-  const roadPenalty = Math.max(0, 0.5*(0.2 - Math.min(nearRoad,0.2))/0.2);
-
-  let score = edge + water - roadPenalty;
-  return Math.max(0, score);
-}
-
-function minDistance(point, features){
-  if(!features.length) return 999;
-  let min = 999;
-  features.forEach(f=>{
-    const d = turf.distance(point, f);
-    if(d < min) min = d;
-  });
-  return min; // kilometers
-}
-
-function generateHeatmap(){
-  const b = map.getBounds();
-  const bbox = [b.getSouth(), b.getWest(), b.getNorth(), b.getEast()];
-  const density = Math.max(10, Math.min(40, Math.floor(map.getZoom()*3))); // sampling per axis
-  const latStep = (bbox[2]-bbox[0]) / density;
-  const lonStep = (bbox[3]-bbox[1]) / density;
-  const pts = [];
-  for(let i=0;i<=density;i++){
-    for(let j=0;j<=density;j++){
-      const lat = bbox[0] + i*latStep;
-      const lon = bbox[1] + j*lonStep;
-      const s = edgeScore([lon, lat]);
-      if(s>0){
-        // Leaflet.heat expects [lat, lon, intensity 0..1]
-        const intensity = Math.min(1, s); // already small
-        pts.push([lat, lon, intensity]);
+      try {
+        let data = await fetchOverpass(query);
+        console.log("Overpass data", data);
+        // Just mark trail count for now
+        L.marker(map.getCenter()).addTo(map).bindPopup(`Fetched ${data.elements.length} features`).openPopup();
+      } catch(err){
+        alert("Could not load landcover/trails from OSM. Try zooming in more.");
       }
     }
-  }
-  heatLayer.setLatLngs(pts);
-  if(heatVisible && !map.hasLayer(heatLayer)) heatLayer.addTo(map);
-}
 
-async function refreshAll(center){
-  try {
-    const c = center || map.getCenter();
-    await updateWeather(c.lat, c.lng);
-  } catch(e){ console.error(e); }
+    map.on('moveend', loadTrails);
+    loadTrails();
 
-  try {
-    const b = map.getBounds();
-    const bbox = [b.getSouth(), b.getWest(), b.getNorth(), b.getEast()];
-    const fc = await fetchOverpass(bbox);
-    categorize(fc);
-    generateHeatmap();
-  } catch(e){ console.error(e); alert('Could not load landcover/trails from OSM (rate limited?). Try smaller area or zoom in.'); }
-}
-
-// Controls
-const btnUpdate = document.getElementById('updateHeat');
-btnUpdate.onclick = ()=> refreshAll();
-const btnToggle = document.getElementById('toggleHeat');
-btnToggle.onclick = ()=>{ heatVisible = !heatVisible; if(heatVisible){ heatLayer.addTo(map); } else { map.removeLayer(heatLayer); } };
-
-// Initial fetch
-refreshAll();
-
-</script></body>
+    function useMyLocation(){
+      navigator.geolocation.getCurrentPosition(pos=>{
+        map.setView([pos.coords.latitude, pos.coords.longitude], 13);
+      });
+    }
+  </script></body>
 </html>
